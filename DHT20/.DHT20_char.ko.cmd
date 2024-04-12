@@ -1,1 +1,0 @@
-cmd_/home/debian/nfsmnt/DHT20/DHT20_char.ko := ld -r -EL -z noexecstack --build-id=sha1  -T scripts/module.lds -o /home/debian/nfsmnt/DHT20/DHT20_char.ko /home/debian/nfsmnt/DHT20/DHT20_char.o /home/debian/nfsmnt/DHT20/DHT20_char.mod.o;  true

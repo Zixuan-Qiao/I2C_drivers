@@ -1,1 +1,0 @@
-cmd_/home/debian/nfsmnt/DHT20/Module.symvers := sed 's/ko$$/o/' /home/debian/nfsmnt/DHT20/modules.order | scripts/mod/modpost -m    -o /home/debian/nfsmnt/DHT20/Module.symvers -e -i Module.symvers   -T -
