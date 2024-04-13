@@ -57,11 +57,6 @@ ssize_t DHT20_read(struct file *filp, char __user *buff, size_t size, loff_t *lo
 	if(IS_ERR_VALUE(res)) {
 		printk("Return data transmission failed. \n");
 		return res;
-	}
-	
-	printk("Received data: ");
-	for(i = 0; i < 6; i++) {
-		printk("%#x", data[i]);
 	}	
 	
 	res = copy_to_user(buff, data + 1, 5);
@@ -83,13 +78,10 @@ long DHT20_ioctl(struct file *filp, unsigned int command, unsigned long buff) {
 	
 	switch(command) {
 		case INIT_SET_ADPT:
-			printk("Ioctl INIT_SET_ADPT invoked. \n");
 			if(copy_from_user(&adpt_nr, (int *)buff, sizeof(int))) {
 				printk("Copying from user failed. \n");
 				return -EFAULT;
 			}
-			
-			printk("Adapter number: %d. \n", adpt_nr);
 			
 			adpt = i2c_get_adapter(adpt_nr);
 			if(!adpt) {
@@ -120,15 +112,11 @@ long DHT20_ioctl(struct file *filp, unsigned int command, unsigned long buff) {
 				return res;
 			}
 			
-			printk("Status received: %#x. \n", status[0]);
-			
 			status[0] |= 0x18;
 			if(status[0] != 0x18) {
 				printk("Error in initialization. \n");
 				return -ENOTTY;
 			}
-			
-			printk("Initialization succeed! \n");
 			
 			mdelay(10);
 			
@@ -143,7 +131,6 @@ long DHT20_ioctl(struct file *filp, unsigned int command, unsigned long buff) {
 
 int DHT20_open(struct inode *inode, struct file *filp) {
 	struct i2c_client *new_client;
-	printk("DHT20 opened. \n");
 	
 	new_client = (struct i2c_client *)kzalloc(sizeof(struct i2c_client), GFP_KERNEL);
 	if(!new_client) {
@@ -159,8 +146,7 @@ int DHT20_open(struct inode *inode, struct file *filp) {
 
 int DHT20_release(struct inode *inode, struct file *filp) {
 	kfree(filp->private_data);
-	
-	printk("DHT20 file pointer released. \n");
+
 	return 0;
 }
 
@@ -191,22 +177,17 @@ static int __init DHT20_init(void) {
 	}
 
 	cdev_init(&DHT20_cdev, &DHT20_fops);
-	printk("DHT20 cdev driver init. \n");
 	
 	DHT20_cdev.owner = THIS_MODULE;
 	
-	printk("DHT20 cdev add. \n");
 	if(cdev_add(&DHT20_cdev, DHT20_id, 1)) {
 		goto cdev_fail;
 	}
-	
-	printk("DHT20 cdev added. \n");
 	
 	dev_res= device_create(DHT20_class, NULL, DHT20_id, NULL, "DHT20");
 	if(PTR_ERR_OR_ZERO(dev_res)) {
 		goto create_fail;
 	}
-	printk("DHT20 directory created. \n");
 	
 	return 0;
 	
@@ -230,8 +211,6 @@ static void __exit DHT20_exit(void) {
 	class_destroy(DHT20_class);
 	
 	unregister_chrdev_region(DHT20_id, 1);
-	
-	printk("DHT20 unloaded\n");
 }
 
 module_init(DHT20_init);
