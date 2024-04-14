@@ -8,7 +8,13 @@ Standard I2C client driver, implements probe and remove functions to manage the 
 
 **2. Char Device Driver**
 
-Provides interface to user-space. Its workflow is implemented by the following functions:
+As stated in the Linux documentation, I2C devices are usually managed by kernel-space drivers. Such approach provides security but lacks convenience. Thus, a loadable module i2c-dev is included in the Linux source tree to make I2C devices accessible in user-space. 
+
+The i2c-dev module is designed to control any I2C client, thus is very generic. To control a device with i2c-dev, the user needs to go through its data sheet and determine the byte sequences to send, which is not user-friendly and prone to errors. 
+
+The DHT20 char device driver is developed on the basis of i2c-dev with specialization. It provides user interface as well as operations packaged as functions. The user application can control the DHT20 by issuing system calls such as read and ioctl whithout sending commands directly.  
+
+The workflow of DHT20 char device driver is implemented by the following functions:
 
 DHT20_init -> initializes one char device, create directory /dev/DHT20 to provide user interface
 
