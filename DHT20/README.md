@@ -6,6 +6,8 @@ DHT20	is a humidity and temperature sensor manufactured by Aosong Electronic.
 
 Standard I2C client driver, implements probe and remove functions to manage the device from kernel-space. 
 
+Since DHT20 does not come with an interrupt line, workqueue is adopted to poll the device regularly. 
+
 **2. Char Device Driver**
 
 As stated in the Linux documentation, I2C devices are usually managed by kernel-space drivers. Such approach provides security but lacks convenience. Thus, a loadable module i2c-dev is included in the Linux source tree to make I2C devices accessible in user-space. 
