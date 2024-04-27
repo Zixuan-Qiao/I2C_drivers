@@ -2,7 +2,7 @@
 A collection of linux kernel drivers developed for I2C sensors. 
 
 ## Introduction
-For most included sensors, two different drivers are developed: 
+For some included sensors, two different drivers are developed: 
 a char device driver that provides interface to user-space and 
 an I2C client driver that is more consistent with Linux conventions. 
 
