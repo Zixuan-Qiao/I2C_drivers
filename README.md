@@ -10,6 +10,7 @@ an I2C client driver that is more consistent with Linux conventions.
 | Number | Functionality |
 |:------:|:------:|
 | DHT20 | Humidity and temperature sensor |
+| ISL29125 | RGB light intensity sensor |
 
 ## Tested Platform
 | Hardward host | Linux kernel version | Compiler version |
