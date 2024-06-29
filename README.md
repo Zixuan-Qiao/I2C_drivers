@@ -11,6 +11,7 @@ an I2C client driver that is more consistent with Linux conventions.
 |:------:|:------:|
 | DHT20 | Humidity and temperature sensor |
 | ISL29125 | RGB light intensity sensor |
+| BMA400 | 3-axis accelerometer |
 
 ## Tested Platform
 | Hardward host | Linux kernel version | Compiler version |
