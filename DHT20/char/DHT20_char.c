@@ -1,128 +1,104 @@
-#include <linux/module.h>
-#include <linux/init.h>
-#include <linux/fs.h>
-#include <linux/cdev.h>
-#include <linux/slab.h>
-#include <linux/device.h>
-#include <linux/delay.h>
-#include <linux/i2c.h>
-#include <linux/ioctl.h>
-#include <linux/mutex.h>
-
-#define DHT20_ADDR 0x38
-#define INIT_SET_ADPT _IOW('D', 1, int)
-
-/*
-init -> init one char device, create inode /dev/DHT20
-open -> allocate a client, then associate it with filp->private_data
-ioctl -> allow user app to specify adapter number (address is fixed)
-read -> send bit sequences according to data sheet to obtain data and return them to user space
-release -> free the client, called when a filps use count drops to 0
-exit -> unregister the cdev
-*/
-
-static dev_t DHT20_id;
-static unsigned int DHT20_major;
-static unsigned int DHT20_minor;
-static struct cdev DHT20_cdev;
-static struct class *DHT20_class;
+#include "DHT20_char.h"
 
 ssize_t DHT20_read(struct file *filp, char __user *buff, size_t size, loff_t *loff) {
-
-	int i;
-	int res;
+	int i, result;
+	char cmd_r[CMD_LEN + 1], data[READ_LEN + 2];
+	struct i2c_client *client;
 	
-	char cmd_r[4];
-	unsigned char data[7];
+	if(size < sizeof(char) * READ_LEN) {
+		PDEBUG("Insufficient buffer size, %d required. \n", READ_LEN);
+		return 0;
+	}
 	
-	struct i2c_client *curr_client;
-	
-	cmd_r[0] = 0xAC;
-	cmd_r[1] = 0x33;
-	cmd_r[2] = 0x00;
+	cmd_r[0] = CMD_1;
+	cmd_r[1] = CMD_2;
+	cmd_r[2] = CMD_3;
 	cmd_r[3] = '\0';
 	
-	curr_client = filp->private_data;
-	res = i2c_master_send(curr_client, cmd_r, 3);
-	if(IS_ERR_VALUE(res)) {
-		printk("Read command transmission failed. \n");
-		return res;
+	client = filp->private_data;
+	
+	result = i2c_master_send(client, cmd_r, CMD_LEN);
+	if(result < 0) {
+		PDEBUG("Read command transmission failed. \n");
+		return 0;
 	}
 	
 	mdelay(80);
 	
-	data[6] = '\0';
+	data[READ_LEN + 1] = '\0';
 	
-	res = i2c_master_recv(curr_client, data, 6);
-	if(IS_ERR_VALUE(res)) {
-		printk("Return data transmission failed. \n");
-		return res;
+	result = i2c_master_recv(client, data, READ_LEN + 1);
+	if(result < 0) {
+		PDEBUG("Return data transmission failed. \n");
+		return 0;
 	}	
 	
-	res = copy_to_user(buff, data + 1, 5);
-	if(res) {
-		printk("Copying failed, error code %d. \n", res);
-		return res;
+	if(copy_to_user(buff, data + 1, sizeof(char) * READ_LEN)) {
+		PDEBUG("Copying failed. \n");
+		return 0;
 	}
 			
-	return 0;
+	return sizeof(char) * READ_LEN;
 }
 
 long DHT20_ioctl(struct file *filp, unsigned int command, unsigned long buff) {
-	int adpt_nr;
-	int res;
-	struct i2c_adapter *adpt;
-	struct i2c_client *curr_client;
-	char init_byte[2];
-	char status[2];
+	int result, adpt_nr;
+	struct i2c_adapter *adpt_ptr;
+	struct i2c_client *client;
+	char init_byte[2], status[2];
 	
 	switch(command) {
 		case INIT_SET_ADPT:
 			if(copy_from_user(&adpt_nr, (int *)buff, sizeof(int))) {
-				printk("Copying from user failed. \n");
+				PDEBUG("Copying failed. \n");
 				return -EFAULT;
 			}
 			
-			adpt = i2c_get_adapter(adpt_nr);
-			if(!adpt) {
-				printk("Invaild adapter number. \n");
+			PDEBUG("Received adapter number: %d. \n", adpt_nr);
+			
+			adpt_ptr = i2c_get_adapter(adpt_nr);
+			if(!adpt_ptr) {
+				PDEBUG("Invaild adapter number. \n");
 				return -ENODEV;
 			}
 			
-			curr_client = filp->private_data;
-			curr_client->adapter = adpt;
+			client = filp->private_data;
+			client->adapter = adpt_ptr;
 			
 			mdelay(100);
 			
-			init_byte[0] = 0x71;
+			init_byte[0] = INIT_CMD;
 			init_byte[1] = '\0';
 			
-			res = i2c_master_send(curr_client, init_byte, 1);
-			
-			if(IS_ERR_VALUE(res)) {
-				printk("Init byte transmission failed, error code: %d. \n", res);
-				return res;
+			result = i2c_master_send(client, init_byte, 1);
+			if(result < 0) {
+				PDEBUG("Init command transmission failed. \n");
+				return result;
 			}
 			
 			status[1] = '\0';
 			
-			res = i2c_master_recv(curr_client, status, 1);
-			if(IS_ERR_VALUE(res)) {
-				printk("Status byte transmission failed. \n");
-				return res;
+			result = i2c_master_recv(client, status, 1);
+			if(result < 0) {
+				PDEBUG("Status transmission failed. \n");
+				return result;
 			}
+			
+			PDEBUG("Status received: %02X. \n", status[0]);
 			
 			status[0] |= 0x18;
 			if(status[0] != 0x18) {
-				printk("Error in initialization. \n");
-				return -ENOTTY;
+				PDEBUG("Error in initialization. \n");
+				return -EFAULT;
 			}
 			
 			mdelay(10);
 			
 			break;
+			
 		default:
-			printk("Command not found. \n");
+			PDEBUG("Command not found. \n");
+			return -EFAULT;
 	}
 	
 	return 0;
@@ -131,6 +107,8 @@ long DHT20_ioctl(struct file *filp, unsigned int command, unsigned long buff) {
 
 int DHT20_open(struct inode *inode, struct file *filp) {
 	struct i2c_client *new_client;
+	
+	PDEBUG("Device file opened. \n");
 	
 	new_client = (struct i2c_client *)kzalloc(sizeof(struct i2c_client), GFP_KERNEL);
 	if(!new_client) {
@@ -145,8 +123,11 @@ int DHT20_open(struct inode *inode, struct file *filp) {
 }
 
 int DHT20_release(struct inode *inode, struct file *filp) {
+	
 	kfree(filp->private_data);
-
+	
+	PDEBUG("File pointer released. \n");
+	
 	return 0;
 }
 
@@ -158,21 +139,24 @@ static struct file_operations DHT20_fops = {
 	.release = DHT20_release,
 };
 
-static int __init DHT20_init(void) {
+static dev_t DHT20_id;
+static struct cdev DHT20_cdev;
+static struct class *DHT20_class;
 
+static int __init DHT20_init(void) {
 	int result;
 	struct device *dev_res;
-	result = alloc_chrdev_region(&DHT20_id, 0, 1, "DHT20");
 	
+	result = alloc_chrdev_region(&DHT20_id, 0, 1, "DHT20");
 	if(result < 0) {
-		printk("Failed when requesting device number. \n");
+		PDEBUG("Failed when requesting device number. \n");
 		return result;
 	}
-	DHT20_major = MAJOR(DHT20_id);
-	DHT20_minor = MINOR(DHT20_id);
 	
 	DHT20_class = class_create(THIS_MODULE, "DHT20");
-	if(IS_ERR(DHT20_class)) {
+	result = (int)PTR_ERR_OR_ZERO(DHT20_class);
+	if(result) {
+		PDEBUG("Failed when creating device class. \n");
 		goto class_fail;
 	}
 
@@ -180,14 +164,20 @@ static int __init DHT20_init(void) {
 	
 	DHT20_cdev.owner = THIS_MODULE;
 	
-	if(cdev_add(&DHT20_cdev, DHT20_id, 1)) {
+	result = cdev_add(&DHT20_cdev, DHT20_id, 1);
+	if(result < 0) {
 		goto cdev_fail;
 	}
 	
+	PDEBUG("cdev added. \n");
+	
 	dev_res= device_create(DHT20_class, NULL, DHT20_id, NULL, "DHT20");
-	if(PTR_ERR_OR_ZERO(dev_res)) {
+	result = (int)PTR_ERR_OR_ZERO(dev_res);
+	if(result) {
 		goto create_fail;
 	}
+	
+	PDEBUG("Device file created. \n");
 	
 	return 0;
 	
@@ -211,10 +201,9 @@ static void __exit DHT20_exit(void) {
 	class_destroy(DHT20_class);
 	
 	unregister_chrdev_region(DHT20_id, 1);
+	
+	PDEBUG("Driver unloaded. \n");
 }
 
 module_init(DHT20_init);
 module_exit(DHT20_exit);
-
-MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Providing interface to user-space for DHT20 sensor");
