@@ -28,7 +28,7 @@ STTS22H_release -> frees the allocated data structure when a filp's use count dr
 STTS22H_exit -> deletes the char device
 
 ## Schematic
-
+<img width="400" alt="1" src="https://github.com/Zixuan-Qiao/I2C_drivers/assets/102449059/8fd034e4-a2ac-4375-9503-20dc2b3cc095">
 
 ## References
 1. https://www.st.com/resource/en/datasheet/stts22h.pdf
