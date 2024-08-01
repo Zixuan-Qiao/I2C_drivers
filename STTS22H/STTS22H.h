@@ -1,3 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/* STMicroelectronics temperature sensor STTS22H driver
+   
+   Allow users to manage STTS22H from user-space, 
+   change operation modes and obtain data from it
+
+   Copyright (c) 2024,2024 Zixuan Qiao <zqiao104@uottawa.ca> */
+
 #ifndef STTS22H_HEADER
 #define STTS22H_HEADER
 
@@ -62,8 +70,9 @@
 
 #define CONV_IN_PROG 0x01
 
+MODULE_AUTHOR("Zixuan Qiao <zqiao104@uottawa.ca>");
+MODULE_DESCRIPTION("Providing user-interface for STTS22H");
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Providing user interface to STTS22H");
 
 enum mode {
 	one_shot = 0,
@@ -83,11 +92,10 @@ struct STTS22H_data {
 	struct list_head entry;
 	struct mutex lock;
 	int mode;
-	int adpt;	// also an indicator
+	int adpt;
 };
 
 LIST_HEAD(client_list);
-
 struct mutex list_lock;
 
 #endif
