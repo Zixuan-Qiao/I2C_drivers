@@ -1,4 +1,95 @@
-#include <STTS22H.h>
+// SPDX-License-Identifier: GPL-2.0-or-later
+/* STMicroelectronics temperature sensor STTS22H driver
+   
+   Allow users to manage STTS22H from user-space,
+   change operation modes and obtain data from it
+
+   Copyright (c) 2024,2024 Zixuan Qiao <zqiao104@uottawa.ca> */
+
+#include <linux/module.h>
+#include <linux/init.h>
+#include <linux/types.h>
+#include <linux/fs.h>
+#include <linux/slab.h>
+#include <linux/cdev.h>
+#include <linux/device.h>
+#include <linux/delay.h>
+#include <linux/i2c.h>
+#include <linux/list.h>
+#include <linux/ioctl.h>
+#include <linux/mutex.h>
+
+#define DEBUG
+#ifdef DEBUG
+#define PDEBUG(format, args...) printk(KERN_ERR "STTS22H: " format, ## args)
+#else 
+#define PDEBUG(format, args...)
+#endif
+
+#define WRITE_LEN 2
+#define READ_LEN 2
+#define MAX_ATTP 100
+
+#define PR_LIST _IO('S', 1)
+#define CHG_MODE _IOW('S', 2, int)
+#define CHG_ODR _IOW('S', 3, int)
+
+/* Register address */
+#define WHOAMI_REG 0x01
+#define CHIP_ID 0xA0
+
+#define HIGH_LIMIT_REG 0x02
+#define LOW_LIMIT_REG 0x03
+
+#define CTRL_REG 0x04
+
+#define STATUS_REG 0x05
+
+#define TEMP_LSB_REG 0x06
+#define TEMP_MSB_REG 0x07
+
+/* Configuration value */
+#define BLK_DATA_UD 0x40
+#define AUTO_ADDR_INC 0x08
+#define TIME_OUT_EN 0x00
+
+#define ODR_CLEAR 0xCF
+#define ODR_RATE_25 0x00
+#define ODR_RATE_50 0x10
+#define ODR_RATE_100 0x20
+#define ODR_RATE_200 0x30
+
+#define LOW_ODR_EN 0x80
+#define LOW_ODR_DIS 0x7F
+#define FREE_RUN_EN 0x04
+#define FREE_RUN_DIS 0xFB
+#define ONE_SHOT_GET 0x01
+
+#define CONV_IN_PROG 0x01
+
+enum mode {
+	one_shot = 0,
+	free_run = 1,
+	low_odr = 2,
+};
+
+enum odr_rate {
+	HZ_25 = 0,
+	HZ_50 = 1,
+	HZ_100 = 2,
+	HZ_200 = 3,
+};
+
+struct STTS22H_data {
+	struct i2c_client *client;
+	struct list_head entry;
+	struct mutex lock;
+	int mode;
+	int adpt;
+};
+
+static LIST_HEAD(client_list);
+static struct mutex list_lock;
 
 /*
  * config_register - Write value to a register and verify the result
@@ -35,7 +126,7 @@ config_register(struct i2c_client *i2c_client, u8 reg_addr, u8 config)
 }
 
 /*
- * STTS22H_write - Allow the user to setup the address and adapter 
+ * STTS22H_write - Allow the user to setup the address and adapter
  * 		   number of an i2c cilent and perform validation
  * Return 0 on error, number of written bytes on success
  */
@@ -117,6 +208,7 @@ STTS22H_write(struct file *filp, const char __user *data,
 	
 	/* The list behaves like a queue */
 	list_add_tail(&STTS22H_data->entry, &client_list);
+	
 	/* A non-negative adpt value indicates that the device is on list */
 	STTS22H_data->adpt = adpt_nr;
 	
@@ -146,8 +238,7 @@ STTS22H_write(struct file *filp, const char __user *data,
 		
 		mutex_unlock(&list_lock);
 		
-		STTS22H_data->client->addr = 0x00;
-		STTS22H_data->client->adapter = NULL;	
+		kfree(STTS22H_data->client);
 		
 		mutex_unlock(&STTS22H_data->lock);
 		
@@ -203,6 +294,13 @@ STTS22H_read(struct file *filp, char __user *buff, size_t size, loff_t *loff)
 	
 	if (mutex_lock_interruptible(&STTS22H_data->lock)) {
 		PDEBUG("Cannot perform mutex locking, restart system\n");
+		return 0;
+	}
+	
+	/* In case the user tries to read an uninitialized device */
+	if (!STTS22H_data->client) {
+		mutex_unlock(&STTS22H_data->lock);
+		PDEBUG("Reading failed, unconfigured device\n");
 		return 0;
 	}
 	
@@ -332,6 +430,13 @@ STTS22H_ioctl(struct file *filp, unsigned int command, unsigned long buff)
 			"Cannot perform mutex locking, restart system\n");
 			return -ERESTARTSYS;
 		}
+		
+		/* In case the user tries to config an uninitialized device */
+		if (!STTS22H_data->client) {
+			mutex_unlock(&STTS22H_data->lock);
+			PDEBUG("Mode change failed, unconfigured device\n");
+			return -EFAULT;
+		}
 	
 		/* Preserve current config */
 		result =
@@ -399,6 +504,13 @@ STTS22H_ioctl(struct file *filp, unsigned int command, unsigned long buff)
 			PDEBUG(
 			"Cannot perform mutex locking, restart system\n");
 			return -ERESTARTSYS;
+		}
+		
+		/* In case the user tries to config an uninitialized device */
+		if (!STTS22H_data->client) {
+			mutex_unlock(&STTS22H_data->lock);
+			PDEBUG("ODR change failed, unconfigured device\n");
+			return -EFAULT;
 		}
 	
 		/* Preserve current config */
@@ -588,12 +700,20 @@ class_fail:
 
 static void __exit STTS22H_exit(void)
 {
-	device_destroy(STTS22H_class, STTS22H_id);		
+	device_destroy(STTS22H_class, STTS22H_id);
+	
 	cdev_del(&STTS22H_cdev);
+	
 	class_destroy(STTS22H_class);
+	
 	unregister_chrdev_region(STTS22H_id, 1);
+	
 	PDEBUG("Driver unloaded\n");
 }
 
 module_init(STTS22H_init);
 module_exit(STTS22H_exit);
+
+MODULE_AUTHOR("Zixuan Qiao <zqiao104@uottawa.ca>");
+MODULE_DESCRIPTION("Providing user-interface for STTS22H");
+MODULE_LICENSE("GPL");
