@@ -239,6 +239,7 @@ STTS22H_write(struct file *filp, const char __user *data,
 		mutex_unlock(&list_lock);
 		
 		kfree(STTS22H_data->client);
+		STTS22H_data->client = NULL;
 		
 		mutex_unlock(&STTS22H_data->lock);
 		
@@ -621,6 +622,7 @@ static int STTS22H_release(struct inode *inode, struct file *filp)
 	if (STTS22H_data->client) {
 		i2c_put_adapter(STTS22H_data->client->adapter);
 		kfree(STTS22H_data->client);
+		STTS22H_data->client = NULL;
 	}
 	
 	kfree(STTS22H_data);
